@@ -3718,6 +3718,7 @@ void llama_context::set_mtps(const std::vector<llama_context *> & ctxs_mtp_in) {
     mtp.ctx_mtp     = ctx_mtp_in;
     mtp.ctxs_mtp    = ctxs_mtp_in;
     mtp.pending_pos = -1;
+    mtp.pending_t_gpu = nullptr;
     mtp.hook_calls           = 0;
     mtp.hook_skip_bad_shape  = 0;
     mtp.hook_skip_caught_up  = 0;
@@ -3737,6 +3738,19 @@ void llama_context::set_mtps(const std::vector<llama_context *> & ctxs_mtp_in) {
         mtp.prefill_h.clear();
         mtp.prefill_tokens.clear();
         mtp.prefill_pos.clear();
+
+        for (llama_context * ctx_mtp : mtp.ctxs_mtp) {
+            auto & mtp_model = const_cast<llama_model &>(ctx_mtp->model);
+            if (!mtp_model.tok_embd) {
+                mtp_model.tok_embd = model.tok_embd;
+            }
+            if (!mtp_model.output_norm) {
+                mtp_model.output_norm = model.output_norm;
+            }
+            if (!mtp_model.output) {
+                mtp_model.output = model.output;
+            }
+        }
         LLAMA_LOG_INFO("%s: MTP draft head registered (n_ctxs=%zu, ctx_mtp=%p, n_ubatch=%d, n_embd=%d)\n",
                        __func__, mtp.ctxs_mtp.size(), (const void *) mtp.ctx_mtp, n_ub, n_embd);
     } else {
