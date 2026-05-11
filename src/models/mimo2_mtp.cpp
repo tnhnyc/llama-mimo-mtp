@@ -42,9 +42,9 @@ void llama_model_mimo2_mtp::load_arch_hparams(llama_model_loader & ml) {
 void llama_model_mimo2_mtp::load_arch_tensors(llama_model_loader &) {
     LLAMA_LOAD_LOCALS;
 
-    tok_embd    = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD,  "weight"), {n_embd, n_vocab}, 0);
-    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd},          0);
-    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, 0);
+    tok_embd    = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD,  "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
+    output_norm = create_tensor(tn(LLM_TENSOR_OUTPUT_NORM, "weight"), {n_embd},          TENSOR_NOT_REQUIRED);
+    output      = create_tensor(tn(LLM_TENSOR_OUTPUT,      "weight"), {n_embd, n_vocab}, TENSOR_NOT_REQUIRED);
 
     const uint32_t n_main = n_layer - hparams.nextn_predict_layers;
     for (int i = 0; i < n_layer; ++i) {

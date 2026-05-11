@@ -891,10 +891,6 @@ private:
 
         params_base = params;
 
-        if (params_base.speculative.type == COMMON_SPECULATIVE_TYPE_MTP) {
-            setenv("LLAMA_MIMO_MTP_TREE_SEQ_MAX", "8", 0);
-        }
-
         llama_init = common_init_from_params(params_base);
 
         model = llama_init->model();
@@ -970,7 +966,6 @@ private:
 
             auto mparams_mtp = common_model_params_to_llama(params_mtp);
             mparams_mtp.override_arch = "mimo2_mtp";
-            mparams_mtp.use_mmap = false;  // load only 39 tensors, not full 106GB mmap
 
             SRV_INF("loading MTP draft head from '%s' as '%s'\n",
                     params_mtp.model.path.c_str(), mparams_mtp.override_arch);
@@ -982,7 +977,7 @@ private:
             }
 
             auto cparams_mtp = common_context_params_to_llama(params_mtp);
-            cparams_mtp.n_seq_max = std::max((uint32_t)1, (uint32_t)params_base.n_parallel);
+            cparams_mtp.n_seq_max = 1;
             if (const char * env = std::getenv("LLAMA_MIMO_MTP_TREE_SEQ_MAX")) {
                 const int32_t n_seq_max_env = std::atoi(env);
                 if (n_seq_max_env > 0 && (uint32_t) n_seq_max_env > cparams_mtp.n_seq_max) {
