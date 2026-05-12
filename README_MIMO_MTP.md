@@ -9,7 +9,7 @@ This fork loads the normal MiMo target model and an internal `mimo2_mtp` draft h
 Tested locally:
 
 - Apple M3 Max, Metal, 128 GB unified memory.
-- MiMo-V2.5 IQ3_S-style GGUF with the main model quantized and appended MTP tensors kept high precision.
+- MiMo-V2.5 IQ3_S-style GGUF with the main model quantized and core `nextn` tensors kept high precision.
 - `llama-server --spec-type mtp --spec-draft-n-max 1`.
 
 Works:
@@ -37,7 +37,7 @@ python3 convert_hf_to_gguf.py /path/to/MiMo-V2.5 \
   --mimo-mtp-layers 3 \
   --outfile /path/to/MiMo-V2.5-MTP3-BF16.gguf
 
-# Quantize. This fork keeps core nextn tensors high precision.
+# Quantize. This fork keeps core nextn projection/norm tensors high precision.
 ./build/bin/llama-quantize \
   /path/to/MiMo-V2.5-MTP3-BF16.gguf \
   /path/to/MiMo-V2.5-MTP3-IQ3_S.gguf \
@@ -73,7 +73,7 @@ Recommended:
 
 - Start with `--spec-draft-n-max 1`.
 - Use `--flash-attn auto` or `--flash-attn on` on backends where it is supported.
-- Keep MTP tensors high precision when quantizing small target quants such as IQ3_S.
+- Keep core `nextn` tensors high precision when quantizing small target quants such as IQ3_S.
 
 Avoid for normal serving:
 

@@ -335,6 +335,11 @@ static bool tensor_allows_quantization(const llama_model_quantize_params * param
     quantize &= name.find("time_mix_a2.weight") == std::string::npos;
     quantize &= name.find("time_mix_g1.weight") == std::string::npos;
     quantize &= name.find("time_mix_g2.weight") == std::string::npos;
+
+    // Keep core MTP/NextN projection tensors high precision for draft quality.
+    quantize &= name.find(".nextn.eh_proj") == std::string::npos;
+    quantize &= name.find(".nextn.enorm")   == std::string::npos;
+    quantize &= name.find(".nextn.hnorm")   == std::string::npos;
     quantize &= name.find("time_mix_decay_w1.weight") == std::string::npos;
     quantize &= name.find("time_mix_decay_w2.weight") == std::string::npos;
     quantize &= name.find("time_mix_lerp_fused.weight") == std::string::npos;
