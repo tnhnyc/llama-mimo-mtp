@@ -9,7 +9,8 @@ This fork loads the normal MiMo target model and an internal `mimo2_mtp` draft h
 Tested locally:
 
 - Apple M3 Max, Metal, 128 GB unified memory.
-- MiMo-V2.5 IQ3_S-style GGUF with the main model quantized and core `nextn` tensors kept high precision.
+- MiMo-V2.5 IQ3_S-style GGUF replicating [AesSedai's IQ3_S recipe](https://huggingface.co/AesSedai/MiMo-V2.5-GGUF/tree/main/IQ3_S) with AesSedai's imatrix, plus appended MTP tensors.
+- Core `nextn` tensors kept high precision in the tested GGUF.
 - `llama-server --spec-type mtp --spec-draft-n-max 1`.
 
 Works:
@@ -28,7 +29,7 @@ Not proven:
 
 ## Published GGUF
 
-A tested IQ3_S same-GGUF build is available at [tnhnyzc/MiMO-V2.5-MTP-GGUF](https://huggingface.co/tnhnyzc/MiMO-V2.5-MTP-GGUF). It still requires this fork; stock llama.cpp does not load the MiMo MTP draft architecture.
+A tested IQ3_S same-GGUF build is available at [tnhnyzc/MiMO-V2.5-MTP-GGUF](https://huggingface.co/tnhnyzc/MiMO-V2.5-MTP-GGUF). It replicates [AesSedai's IQ3_S recipe](https://huggingface.co/AesSedai/MiMo-V2.5-GGUF/tree/main/IQ3_S) using AesSedai's imatrix, with MTP tensors included. It still requires this fork; stock llama.cpp does not load the MiMo MTP draft architecture.
 
 ```bash
 ./build/bin/llama-server \
