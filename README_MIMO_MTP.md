@@ -1,49 +1,161 @@
 # MiMo-V2.5 MTP Speculative Decoding
 
-**Experimental. Tested on one hardware config (Apple M3 Max, Metal). Not benchmarked on dGPU. Things may be broken.**
+Experimental same-GGUF MTP speculative decoding for MiMo-V2.5 in llama.cpp.
 
-Same-GGUF speculative decoding using MiMo-V2.5's built-in MTP heads as the draft model. No separate draft weights needed.
+This fork loads the normal MiMo target model and an internal `mimo2_mtp` draft head from the same GGUF. No separate draft model file is needed.
 
-## What works
+## Current State
 
-- p/q probability-based acceptance with stochastic draft sampling
-- `--spec-draft-n-max 1` (single draft token per step) — tested, stable
-- Apple M3 Max (Metal, 128 GB unified memory)
+Tested locally:
 
-## What we don't know yet
+- Apple M3 Max, Metal, 128 GB unified memory.
+- MiMo-V2.5 IQ3_S-style GGUF with the main model quantized and appended MTP tensors kept high precision.
+- `llama-server --spec-type mtp --spec-draft-n-max 1`.
 
-- **dGPU performance.** Not tested. Should help given the draft is ~1% of target compute, but no benchmarks yet.
-- **`--spec-draft-n-max 2+`.** Output is clean, but throughput is near baseline or slightly negative on M3 Max.
+Works:
 
-## Experimental knobs
+- MiMo-V2.5 conversion with appended MTP / `nextn` tensors.
+- MiMo target trunk skips appended MTP layers during normal inference.
+- `mimo2_mtp` draft architecture loads the appended MTP layers from the same GGUF.
+- p/q speculative acceptance for stochastic sampling.
+- Conservative `nmax=1` serving.
 
-Two flags for testing whether the BF16 draft signal can correct quantization noise in the target model. **Both default to off.**
+Not proven:
 
-- `--spec-logit-blend` (default: 0.0): Blends draft logits into target logits before softmax. On IQ3_S, we observed ~32% argmax disagreement between target and BF16 draft. With blend=2.0, acceptance goes from ~50% to ~94% on our hardware. Whether this matters at higher target precision or on dGPU is unknown.
-- `--spec-accept-bias` (default: 1.0): Shifts the p/q acceptance threshold. >1.0 trusts the draft more.
+- dGPU performance.
+- `nmax=2+` as a useful speed path.
+- Prompt-cache reuse with MTP.
+- Context shift with MTP.
+- Production-ready packed/tree verification.
 
-Suggested starting point for experimentation: `--spec-logit-blend 2.0 --spec-accept-bias 4.0`
-
-## Quick start
+## Quick Start
 
 ```bash
-# Convert from HuggingFace (preserves MTP heads at BF16)
+# Convert from a MiMo-V2.5 HF directory that includes model_mtp.safetensors.
 python3 convert_hf_to_gguf.py /path/to/MiMo-V2.5 \
-  --outtype bf16 --mimo-mtp-layers 3 --outfile out.gguf
+  --outtype bf16 \
+  --mimo-mtp-layers 3 \
+  --outfile /path/to/MiMo-V2.5-MTP3-BF16.gguf
 
-# Quantize (MTP tensors kept at BF16 automatically)
-./build/bin/llama-quantize out.gguf out-IQ3_S.gguf IQ3_S
+# Quantize. This fork keeps core nextn tensors high precision.
+./build/bin/llama-quantize \
+  /path/to/MiMo-V2.5-MTP3-BF16.gguf \
+  /path/to/MiMo-V2.5-MTP3-IQ3_S.gguf \
+  IQ3_S
 
-# Run
+# Run the tested conservative mode.
 ./build/bin/llama-server \
-  --model out-IQ3_S.gguf \
+  --model /path/to/MiMo-V2.5-MTP3-IQ3_S.gguf \
   --spec-type mtp \
   --spec-draft-n-max 1 \
+  -np 1 \
   -ngl 99
 ```
 
-## Limitations
+Add your normal sampling/server args as needed. The current tested path is server-first; CLI behavior has not been the focus.
 
-- MiMo2 architecture only
-- `n_parallel` must be 1
-- Requires GGUF converted with this fork's `convert_hf_to_gguf.py --mimo-mtp-layers 3` (upstream converter skips MTP tensors)
+## Runtime Constraints
+
+Required:
+
+- `general.architecture = mimo2`.
+- GGUF converted with this fork, not upstream llama.cpp, because upstream conversion does not export MiMo MTP tensors.
+- `mimo2.nextn_predict_layers > 0`.
+- `-np 1` / `--parallel 1`. The server rejects `n_parallel > 1` for MTP.
+
+Automatically handled:
+
+- The internal MTP draft model is loaded with `override_arch = mimo2_mtp`.
+- The internal MTP draft load uses `use_mmap = false` so it does not mmap the whole target GGUF just to load the small draft subset.
+- Cache reuse and context shift are disabled when MTP is active.
+
+Recommended:
+
+- Start with `--spec-draft-n-max 1`.
+- Use `--flash-attn auto` or `--flash-attn on` on backends where it is supported.
+- Keep MTP tensors high precision when quantizing small target quants such as IQ3_S.
+
+Avoid for normal serving:
+
+- `--spec-draft-n-max 2` or higher, unless you are explicitly experimenting.
+- `LLAMA_MIMO_MTP_TREE_*` flags.
+- `LLAMA_MIMO_MTP_MULTI_CTX=1`, unless testing the multi-layer/tree branch behavior.
+- prompt-cache reuse / context shift assumptions.
+
+## Experimental Sampling Knobs
+
+These default to conservative/off values.
+
+- `--spec-calib-temp`: draft calibration temperature for p/q acceptance.
+- `--spec-accept-bias`: shifts p/q acceptance. Values above `1.0` trust the draft more and are heuristic.
+- `--spec-logit-blend`: blends draft logits into target logits before p/q acceptance. This can increase acceptance on low-bit target quants, but it is no longer pure target distribution sampling.
+- `--spec-garbage-thresh`: rejects very low draft-probability tokens.
+- `--spec-dist-restore`: blends draft probability distribution into target probabilities after softmax.
+
+Suggested experiment only:
+
+```bash
+--spec-logit-blend 2.0 --spec-accept-bias 4.0
+```
+
+Use the defaults if you want the least surprising behavior.
+
+## Expected Performance
+
+On the local M3 Max setup, `nmax=1` has shown prompt-dependent gains. Easy/high-agreement prompts can improve around 10-20%; lower-agreement prompts can be near baseline or slightly worse.
+
+Fresh pause-point smoke, 64 generated tokens, `ctx=2048`. Treat absolute tok/s as directional; local thermal state, memory pressure, and host load can move the raw numbers.
+
+| mode | prompt | tok/s | accepted |
+|---|---|---:|---:|
+| no spec | numbers | `20.56` | - |
+| MTP nmax=1 | numbers | `23.29` | `31/31` |
+| MTP nmax=1, blend/bias | numbers | `26.02` | `31/31` |
+| no spec | speculative_explain | `21.02` | - |
+| MTP nmax=1 | speculative_explain | `21.90` | `28/35` |
+| MTP nmax=1, blend/bias | speculative_explain | `23.48` | `29/33` |
+
+`blend/bias` here means `--spec-logit-blend 2.0 --spec-accept-bias 4.0`. Treat it as heuristic and evaluate output quality yourself.
+
+That means this is usable as an experimental MiMo MTP path, but it is not yet a broad SGLang-like speed path.
+
+## Quant Upload Notes
+
+An IQ3_S MTP GGUF can be useful to publish if it is labeled clearly:
+
+- built from MiMo-V2.5 original weights with MTP tensors included;
+- target model quantized as IQ3_S;
+- appended MTP tensors kept high precision where this fork's quantizer does so;
+- requires this fork, not stock llama.cpp;
+- recommended runtime is `--spec-type mtp --spec-draft-n-max 1`;
+- dGPU results are unknown.
+
+Do not present it as a universal speedup quant. Present it as a usable experimental quant for this fork.
+
+You can inspect tensor types with:
+
+```bash
+./build/bin/llama-gguf /path/to/model.gguf r n | grep 'blk.48'
+```
+
+## Research Branch
+
+There is a local `desktop/mtp-beam-search` branch with more aggressive tree/beam work:
+
+- auto-enables tree behavior under `LLAMA_MIMO_MTP_MULTI_CTX=1`;
+- adds beam-style draft expansion;
+- uses packed tree verify/commit scaffolding.
+
+Treat that branch as research. It is not the recommended upload/default branch unless it gets fresh benchmark evidence and the README claims are tightened to measured numbers.
+
+## Where Further Work Gets Big
+
+The next real performance path is not another small `nmax` tweak. It is a compact verifier/commit design closer to SGLang:
+
+- packed tree metadata;
+- custom tree attention mask;
+- efficient target verification;
+- correct target and MTP KV commit after partial acceptance;
+- backend-specific row economics, especially on Metal and CUDA.
+
+That is feasible engineering work, but it is a larger project. If pausing here, the clean stopping point is: working MiMo-V2.5 same-GGUF MTP with conservative `nmax=1`, plus documented experimental knobs.
