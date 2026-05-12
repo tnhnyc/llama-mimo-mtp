@@ -34,6 +34,7 @@ A tested IQ3_S same-GGUF build is available at [tnhnyzc/MiMO-V2.5-MTP-GGUF](http
 ```bash
 ./build/bin/llama-server \
   -hf tnhnyzc/MiMO-V2.5-MTP-GGUF \
+  -hff MiMo-V2.5-IQ3_S.gguf \
   --spec-type mtp \
   --spec-draft-n-max 1 \
   --temp 0.6 \
